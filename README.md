@@ -1,4 +1,4 @@
-# tauri-waapi-demo
+# Tauri WAAPI Demo
 
 Tauri 桌面演示应用：通过 **waapi_rs** 调用 **WAAPI（Wwise Authoring API）** 连接并访问已运行的 **Wwise** 设计工具，用于查询 Wwise 信息、工程信息与执行 WAQL 查询。
 
