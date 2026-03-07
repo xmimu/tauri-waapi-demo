@@ -1,0 +1,4 @@
+@import "tailwindcss";
+
+/* 与 Element Plus 暗色主题配合：Tailwind 用 class 策略 */
+@custom-variant dark (&:where(.dark, .dark *));
