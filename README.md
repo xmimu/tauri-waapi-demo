@@ -2,6 +2,8 @@
 
 Tauri 桌面演示应用：通过 **waapi_rs** 调用 **WAAPI（Wwise Authoring API）** 连接并访问已运行的 **Wwise** 设计工具，用于查询 Wwise 信息、工程信息与执行 WAQL 查询。
 
+![应用截图](screen.png)
+
 ## 实现方式
 
 - **后端（Rust）**：使用 [waapi_rs](https://github.com/xmimu/waapi-rs)（当前依赖 `git = "https://github.com/xmimu/waapi-rs.git", branch = "dev"`）建立与 Wwise 的本地 WAAPI 连接。
