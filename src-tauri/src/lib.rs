@@ -13,7 +13,7 @@ async fn get_wwise_info() -> Result<Value, String> {
         .await
         .map_err(|e| e.to_string())?;
     let result = client
-        .call_no_args::<Value>(ak::wwise::core::GET_INFO)
+        .call(ak::wwise::core::GET_INFO, None, None)
         .await
         .map_err(|e| e.to_string())?;
     let info = result.unwrap_or(Value::Object(serde_json::Map::new()));
@@ -27,7 +27,7 @@ async fn get_project_info() -> Result<Value, String> {
         .await
         .map_err(|e| e.to_string())?;
     let result = client
-        .call_no_args::<Value>(ak::wwise::core::GET_PROJECT_INFO)
+        .call(ak::wwise::core::GET_PROJECT_INFO, None, None)
         .await
         .map_err(|e| e.to_string())?;
     let info = result.unwrap_or(Value::Object(serde_json::Map::new()));
@@ -55,7 +55,7 @@ async fn object_get(waql: String, return_str: Option<String>) -> Result<Value, S
         .await
         .map_err(|e| e.to_string())?;
     let result = client
-        .call::<Value>(ak::wwise::core::OBJECT_GET, Some(args), Some(options))
+        .call(ak::wwise::core::OBJECT_GET, Some(args), Some(options))
         .await
         .map_err(|e| e.to_string())?;
     let out = result.unwrap_or(Value::Object(serde_json::Map::new()));
