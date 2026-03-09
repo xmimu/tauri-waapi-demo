@@ -68,6 +68,13 @@ onMounted(() => {
         >
           WAQL 查询
         </RouterLink>
+        <RouterLink
+          to="/subscription"
+          class="text-sm font-medium transition-colors hover:text-blue-600 dark:hover:text-blue-400"
+          :class="route.name === 'Subscription' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'"
+        >
+          订阅
+        </RouterLink>
       </nav>
       <div class="flex items-center">
         <button

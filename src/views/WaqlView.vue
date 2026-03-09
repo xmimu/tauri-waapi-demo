@@ -82,8 +82,6 @@ async function runWaql() {
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">WAQL 语句</label>
           <el-input
             v-model="waql"
-            type="textarea"
-            :rows="2"
             placeholder="$ from type Event"
             class="w-full"
           />
