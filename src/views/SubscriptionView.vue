@@ -1,74 +1,44 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-
-interface SelectionPayload {
-  args?: unknown;
-  kwargs?: { objects?: Record<string, unknown>[] };
-}
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { useObjectColumns } from "../composables/useObjectColumns";
+import { usePaginatedTable } from "../composables/usePaginatedTable";
+import {
+  listenSelectionChanged,
+  subscribeSelectionStart,
+  subscribeSelectionStop,
+} from "../features/waapi/api";
+import { DEFAULT_QUERY_RETURN } from "../features/waapi/constants";
+import type { WaapiObject } from "../features/waapi/types";
 
 const subscribed = ref(false);
 const subError = ref("");
 const subLoading = ref(false);
-const returnStr = ref("id name type");
-const objectList = ref<Record<string, unknown>[]>([]);
+const returnStr = ref(DEFAULT_QUERY_RETURN);
+const objectList = ref<WaapiObject[]>([]);
 let unlisten: (() => void) | null = null;
 
 const returnList = computed(() => objectList.value);
-const totalCount = computed(() => returnList.value.length);
-
-const pageSize = ref(20);
-const currentPage = ref(1);
-
-const paginatedList = computed(() => {
-  const list = returnList.value;
-  const size = pageSize.value;
-  const start = (currentPage.value - 1) * size;
-  return list.slice(start, start + size);
-});
-
-const columns = computed(() => {
-  const list = returnList.value;
-  if (!list.length) return [];
-  const keys = new Set<string>();
-  for (const row of list) {
-    for (const k of Object.keys(row)) keys.add(k);
-  }
-  return Array.from(keys);
-});
-
-function onPageChange(page: number) {
-  currentPage.value = page;
-}
-
-function onSizeChange(size: number) {
-  pageSize.value = size;
-  currentPage.value = 1;
-}
-
-function cellValue(row: Record<string, unknown>, key: string): string {
-  const v = row[key];
-  if (v == null) return "—";
-  if (typeof v === "object") {
-    const o = v as Record<string, unknown>;
-    if (o && typeof o.name === "string") return o.name;
-    return JSON.stringify(v);
-  }
-  return String(v);
-}
+const {
+  pageSize,
+  currentPage,
+  totalCount,
+  paginatedList,
+  onPageChange,
+  onSizeChange,
+  resetPage,
+} = usePaginatedTable(returnList);
+const { columns, cellValue } = useObjectColumns(returnList);
 
 async function toggleSubscription() {
   subLoading.value = true;
   subError.value = "";
   const wantOn = subscribed.value;
+
   try {
     if (wantOn) {
-      await invoke("subscribe_selection_start", {
-        returnStr: returnStr.value.trim() || undefined,
-      });
+      await subscribeSelectionStart(returnStr.value);
     } else {
-      await invoke("subscribe_selection_stop");
+      await subscribeSelectionStop();
     }
   } catch (e) {
     subError.value = e instanceof Error ? e.message : String(e);
@@ -79,10 +49,9 @@ async function toggleSubscription() {
 }
 
 onMounted(async () => {
-  unlisten = await listen<SelectionPayload>("waapi-selection-changed", (ev) => {
-    const objs = (ev.payload?.kwargs?.objects ?? []) as Record<string, unknown>[];
-    objectList.value = objs;
-    currentPage.value = 1;
+  unlisten = await listenSelectionChanged((objects) => {
+    objectList.value = objects;
+    resetPage();
   });
 });
 
@@ -103,10 +72,10 @@ onUnmounted(() => {
       <div class="flex flex-col gap-4 w-full">
         <div>
           <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            return 属性（空格分隔，留空则使用 id name type notes）
+            return 属性（空格分隔）
           </label>
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">
-            不同对象类型具备不同属性，如 WorkUnit 无 volume，Sound 等可播放对象才有 volume
+            不同对象类型可用字段不同，例如可播放对象通常才有 volume
           </p>
           <el-input
             v-model="returnStr"
@@ -124,7 +93,7 @@ onUnmounted(() => {
             @change="toggleSubscription"
           />
           <span class="text-sm text-gray-600 dark:text-gray-400">
-            {{ subscribed ? "订阅中：Wwise 选择变化时将推送到此处" : "关闭" }}
+            {{ subscribed ? "订阅中：Wwise 选中变化会推送到此处" : "已关闭" }}
           </span>
         </div>
 
@@ -178,7 +147,7 @@ onUnmounted(() => {
             />
           </div>
           <p v-else class="text-gray-500 dark:text-gray-400 text-sm">
-            在 Wwise 中切换选中的对象，结果将在此展示
+            在 Wwise 中切换选中的对象，结果会显示在这里
           </p>
         </template>
       </div>

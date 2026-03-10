@@ -1,67 +1,36 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
-import { invoke } from "@tauri-apps/api/core";
+import { computed, ref } from "vue";
+import { useObjectColumns } from "../composables/useObjectColumns";
+import { usePaginatedTable } from "../composables/usePaginatedTable";
+import { objectGet } from "../features/waapi/api";
+import { DEFAULT_QUERY_RETURN } from "../features/waapi/constants";
+import type { WaqlResult } from "../features/waapi/types";
 
 const waql = ref("$ from type Event");
-const returnStr = ref("id name type");
-const result = ref<{ return?: Record<string, unknown>[] } | null>(null);
+const returnStr = ref(DEFAULT_QUERY_RETURN);
+const result = ref<WaqlResult | null>(null);
 const waqlError = ref("");
 const waqlLoading = ref(false);
 
 const returnList = computed(() => result.value?.return ?? []);
-const totalCount = computed(() => returnList.value.length);
-
-const pageSize = ref(20);
-const currentPage = ref(1);
-
-const paginatedList = computed(() => {
-  const list = returnList.value;
-  const size = pageSize.value;
-  const start = (currentPage.value - 1) * size;
-  return list.slice(start, start + size);
-});
-
-const columns = computed(() => {
-  const list = returnList.value;
-  if (!list.length) return [];
-  const keys = new Set<string>();
-  for (const row of list) {
-    for (const k of Object.keys(row)) keys.add(k);
-  }
-  return Array.from(keys);
-});
-
-function onPageChange(page: number) {
-  currentPage.value = page;
-}
-
-function onSizeChange(size: number) {
-  pageSize.value = size;
-  currentPage.value = 1;
-}
-
-function cellValue(row: Record<string, unknown>, key: string): string {
-  const v = row[key];
-  if (v == null) return "—";
-  if (typeof v === "object") {
-    const o = v as Record<string, unknown>;
-    if (o && typeof o.name === "string") return o.name;
-    return JSON.stringify(v);
-  }
-  return String(v);
-}
+const {
+  pageSize,
+  currentPage,
+  totalCount,
+  paginatedList,
+  onPageChange,
+  onSizeChange,
+  resetPage,
+} = usePaginatedTable(returnList);
+const { columns, cellValue } = useObjectColumns(returnList);
 
 async function runWaql() {
   waqlLoading.value = true;
   waqlError.value = "";
   result.value = null;
   try {
-    const raw = await invoke<{ return?: Record<string, unknown>[] }>("object_get", {
-      waql: waql.value,
-      returnStr: returnStr.value.trim() || undefined,
-    });
-    result.value = raw;
-    currentPage.value = 1;
+    result.value = await objectGet(waql.value, returnStr.value);
+    resetPage();
   } catch (e) {
     waqlError.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -87,7 +56,7 @@ async function runWaql() {
           />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">return 属性（空格分隔，留空则使用 id name type notes）</label>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">return 属性（空格分隔）</label>
           <el-input
             v-model="returnStr"
             placeholder="id name type path"

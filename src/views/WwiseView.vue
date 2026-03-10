@@ -1,39 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-
-interface Version {
-  displayName?: string;
-  year?: number;
-  major?: number;
-  minor?: number;
-  build?: number;
-  nickname?: string;
-  schema?: number;
-}
-
-interface Directories {
-  install?: string;
-  authoring?: string;
-  bin?: string;
-  help?: string;
-  user?: string;
-}
-
-interface WwiseInfo {
-  sessionId?: string;
-  apiVersion?: number;
-  displayName?: string;
-  branch?: string;
-  copyright?: string;
-  version?: Version;
-  configuration?: string;
-  platform?: string;
-  isCommandLine?: boolean;
-  processId?: number;
-  processPath?: string;
-  directories?: Directories;
-}
+import { getWwiseInfo } from "../features/waapi/api";
+import type { WwiseInfo } from "../features/waapi/types";
 
 const wwiseInfo = ref<WwiseInfo | null>(null);
 const wwiseError = ref("");
@@ -44,7 +12,7 @@ async function fetchWwiseInfo() {
   wwiseError.value = "";
   wwiseInfo.value = null;
   try {
-    const raw = await invoke<WwiseInfo>("get_wwise_info");
+    const raw = await getWwiseInfo();
     wwiseInfo.value = raw;
   } catch (e) {
     wwiseError.value = e instanceof Error ? e.message : String(e);

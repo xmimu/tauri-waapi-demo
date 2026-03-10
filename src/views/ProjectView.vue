@@ -1,50 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-
-interface Language {
-  id: string;
-  name: string;
-  shortId: number;
-}
-
-interface Platform {
-  id: string;
-  name: string;
-  baseName: string;
-  baseDisplayName: string;
-  soundBankPath: string;
-  copiedMediaPath: string;
-}
-
-interface DefaultConversion {
-  id: string;
-  name: string;
-}
-
-interface Directories {
-  root?: string;
-  cache?: string;
-  originals?: string;
-  soundBankOutputRoot?: string;
-  commands?: string;
-  properties?: string;
-}
-
-interface ProjectInfo {
-  name?: string;
-  displayTitle?: string;
-  path?: string;
-  id?: string;
-  isDirty?: boolean;
-  currentLanguageId?: string;
-  referenceLanguageId?: string;
-  currentPlatformId?: string;
-  languages?: Language[];
-  platforms?: Platform[];
-  defaultConversion?: DefaultConversion;
-  directories?: Directories;
-}
+import { getProjectInfo } from "../features/waapi/api";
+import type { ProjectInfo } from "../features/waapi/types";
 
 const projectInfo = ref<ProjectInfo | null>(null);
 const projectError = ref("");
@@ -55,7 +12,7 @@ async function fetchProjectInfo() {
   projectError.value = "";
   projectInfo.value = null;
   try {
-    const raw = await invoke<ProjectInfo>("get_project_info");
+    const raw = await getProjectInfo();
     projectInfo.value = raw;
   } catch (e) {
     projectError.value = e instanceof Error ? e.message : String(e);
