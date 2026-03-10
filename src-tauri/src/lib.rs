@@ -4,9 +4,22 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
 use waapi_rs::{ak, SubscriptionHandle, WaapiClient};
 
-struct SubscriptionState {
+/// Single persistent WAAPI connection shared by all commands.
+/// Multiple concurrent WaapiClient connections cause the new connect() calls
+/// to block indefinitely when a subscription is already active, making other
+/// pages' buttons unresponsive. Using one shared client serializes operations
+/// through the Mutex and avoids this issue.
+struct AppState {
     client: Option<WaapiClient>,
-    handle: Option<SubscriptionHandle>,
+    sub_handle: Option<SubscriptionHandle>,
+}
+
+impl Drop for AppState {
+    fn drop(&mut self) {
+        // 确保顺序：先释放订阅句柄，再释放连接（兜底，应对崩溃或强制退出）
+        let _ = self.sub_handle.take();
+        let _ = self.client.take();
+    }
 }
 
 #[tauri::command]
@@ -15,35 +28,53 @@ fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
-async fn get_wwise_info() -> Result<Value, String> {
-    let client = WaapiClient::connect()
-        .await
-        .map_err(|e| e.to_string())?;
-    let result = client
+async fn get_wwise_info(state: State<'_, Mutex<AppState>>) -> Result<Value, String> {
+    let mut guard = state.lock().await;
+    if guard.client.is_none() {
+        guard.client = Some(WaapiClient::connect().await.map_err(|e| e.to_string())?);
+    }
+    let result = guard
+        .client
+        .as_ref()
+        .unwrap()
         .call(ak::wwise::core::GET_INFO, None, None)
-        .await
-        .map_err(|e| e.to_string())?;
-    let info = result.unwrap_or(Value::Object(serde_json::Map::new()));
-    client.disconnect().await;
-    Ok(info)
+        .await;
+    match result {
+        Ok(v) => Ok(v.unwrap_or(Value::Object(serde_json::Map::new()))),
+        Err(e) => {
+            guard.client = None;
+            Err(e.to_string())
+        }
+    }
 }
 
 #[tauri::command]
-async fn get_project_info() -> Result<Value, String> {
-    let client = WaapiClient::connect()
-        .await
-        .map_err(|e| e.to_string())?;
-    let result = client
+async fn get_project_info(state: State<'_, Mutex<AppState>>) -> Result<Value, String> {
+    let mut guard = state.lock().await;
+    if guard.client.is_none() {
+        guard.client = Some(WaapiClient::connect().await.map_err(|e| e.to_string())?);
+    }
+    let result = guard
+        .client
+        .as_ref()
+        .unwrap()
         .call(ak::wwise::core::GET_PROJECT_INFO, None, None)
-        .await
-        .map_err(|e| e.to_string())?;
-    let info = result.unwrap_or(Value::Object(serde_json::Map::new()));
-    client.disconnect().await;
-    Ok(info)
+        .await;
+    match result {
+        Ok(v) => Ok(v.unwrap_or(Value::Object(serde_json::Map::new()))),
+        Err(e) => {
+            guard.client = None;
+            Err(e.to_string())
+        }
+    }
 }
 
 #[tauri::command]
-async fn object_get(waql: String, return_str: Option<String>) -> Result<Value, String> {
+async fn object_get(
+    state: State<'_, Mutex<AppState>>,
+    waql: String,
+    return_str: Option<String>,
+) -> Result<Value, String> {
     let return_array: Vec<String> = match return_str.as_deref() {
         None => vec!["id".into(), "name".into(), "type".into(), "notes".into()],
         Some(s) if s.trim().is_empty() => {
@@ -58,26 +89,33 @@ async fn object_get(waql: String, return_str: Option<String>) -> Result<Value, S
     let args = json!({ "waql": waql });
     let options = json!({ "return": return_array });
 
-    let client = WaapiClient::connect()
-        .await
-        .map_err(|e| e.to_string())?;
-    let result = client
+    let mut guard = state.lock().await;
+    if guard.client.is_none() {
+        guard.client = Some(WaapiClient::connect().await.map_err(|e| e.to_string())?);
+    }
+    let result = guard
+        .client
+        .as_ref()
+        .unwrap()
         .call(ak::wwise::core::OBJECT_GET, Some(args), Some(options))
-        .await
-        .map_err(|e| e.to_string())?;
-    let out = result.unwrap_or(Value::Object(serde_json::Map::new()));
-    client.disconnect().await;
-    Ok(out)
+        .await;
+    match result {
+        Ok(v) => Ok(v.unwrap_or(Value::Object(serde_json::Map::new()))),
+        Err(e) => {
+            guard.client = None;
+            Err(e.to_string())
+        }
+    }
 }
 
 #[tauri::command]
 async fn subscribe_selection_start(
     app: AppHandle,
-    state: State<'_, Mutex<SubscriptionState>>,
+    state: State<'_, Mutex<AppState>>,
     return_str: Option<String>,
 ) -> Result<(), String> {
     let mut guard = state.lock().await;
-    if guard.client.is_some() {
+    if guard.sub_handle.is_some() {
         return Err("订阅已开启".into());
     }
     let return_array: Vec<String> = match return_str.as_deref() {
@@ -92,9 +130,14 @@ async fn subscribe_selection_start(
             .collect(),
     };
     let options = json!({ "return": return_array });
-    let client = WaapiClient::connect().await.map_err(|e| e.to_string())?;
+    if guard.client.is_none() {
+        guard.client = Some(WaapiClient::connect().await.map_err(|e| e.to_string())?);
+    }
     let app_clone = app.clone();
-    let handle = client
+    let handle = guard
+        .client
+        .as_ref()
+        .unwrap()
         .subscribe(
             ak::wwise::ui::SELECTION_CHANGED,
             Some(options),
@@ -106,29 +149,30 @@ async fn subscribe_selection_start(
                 let _ = app_clone.emit("waapi-selection-changed", payload);
             },
         )
-        .await
-        .map_err(|e| e.to_string())?;
-    guard.client = Some(client);
-    guard.handle = Some(handle);
-    Ok(())
+        .await;
+    match handle {
+        Ok(h) => {
+            guard.sub_handle = Some(h);
+            Ok(())
+        }
+        Err(e) => {
+            guard.client = None;
+            Err(e.to_string())
+        }
+    }
 }
 
 #[tauri::command]
 async fn subscribe_selection_stop(
-    state: State<'_, Mutex<SubscriptionState>>,
+    state: State<'_, Mutex<AppState>>,
 ) -> Result<(), String> {
-    let (client, handle) = {
+    let handle = {
         let mut guard = state.lock().await;
-        (
-            guard.client.take(),
-            guard.handle.take(),
-        )
+        guard.sub_handle.take()
+        // client stays connected for reuse by other commands
     };
     if let Some(h) = handle {
         h.unsubscribe().await.map_err(|e| e.to_string())?;
-    }
-    if let Some(c) = client {
-        c.disconnect().await;
     }
     Ok(())
 }
@@ -137,10 +181,28 @@ async fn subscribe_selection_stop(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(Mutex::new(SubscriptionState {
+        .manage(Mutex::new(AppState {
             client: None,
-            handle: None,
+            sub_handle: None,
         }))
+        .setup(|app| {
+            let app_handle = app.handle().clone();
+            app.get_webview_window("main")
+                .unwrap()
+                .on_window_event(move |event| {
+                    if let tauri::WindowEvent::Destroyed = event {
+                        let state = app_handle.state::<Mutex<AppState>>();
+                        tauri::async_runtime::block_on(async {
+                            let mut guard = state.lock().await;
+                            if let Some(h) = guard.sub_handle.take() {
+                                let _ = h.unsubscribe().await;
+                            }
+                            guard.client.take();
+                        });
+                    }
+                });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             get_wwise_info,
